@@ -1,0 +1,6 @@
+#!/usr/bin/bash
+
+# Author: Adrián Luján Muñoz (aka clhore)
+# TertiaOptio
+
+printf "infra-k8s-pro\n"

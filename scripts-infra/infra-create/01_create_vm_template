@@ -1,0 +1,84 @@
+#!/usr/bin/bash
+
+# Author: Adrián Luján Muñoz (aka clhore)
+# TertiaOptio
+
+# [READ-ONLY] Colours Code
+readonly END="\033[0m\e[0m"
+readonly GREEN="\e[0;32m\033[1m"
+readonly RED="\e[0;31m\033[1m"
+
+# [READ-ONLY] Absolute Path
+declare -r SSH='/usr/bin/ssh'
+declare -r CURL='/usr/bin/curl'
+declare -r QM='/usr/sbin/qm'
+
+# [READ-ONLY] [INFO] Repository and Imagen
+declare -r REPOSITORY_URL='http://172.31.0.240'
+declare -r IMG='almalinux-9.5-tertiaoptiocloud-amd64-20241213.qcow2'
+declare -r PUBLIC_KEY_CLOUD_INIT='id_rsa.pub'
+declare -r TMP_VM_DISK_PATH='/var/tmp'
+
+# [READ-ONLY] [INFRA] VM Template
+declare -A VM_CONF=()
+VM_CONF['STOR']=local
+VM_CONF['VMID']=6001
+VM_CONF['HOSTNAME']=almalinux-9.5-20241213
+VM_CONF['SOCKETS']=1
+VM_CONF['CORES']=2
+VM_CONF['MEMORY']=2048
+
+function check_exit_status()
+{
+    [ "${1}" == "0" ] || { printf "${RED}[ERROR]${END}\n"; exit 1;};
+    printf "${GREEN}[OK]${END}\n";
+}
+
+printf "[GET] Download ${IMG} >> ${TMP_VM_DISK_PATH}/${IMG}\n";
+#wget ${REPOSITORY_URL}/${IMG} -o ${TMP_VM_DISK_PATH}/${IMG} &>/dev/null || {
+${CURL} -L \
+    -o ${TMP_VM_DISK_PATH}/${IMG} \
+    -C - ${REPOSITORY_URL}/${IMG} &>/dev/null || {
+    printf "[GET_ERROR] Download ${IMG}\n"; exit 1;
+}; printf "[GET_OK] Download ${IMG}\n";
+
+printf "[GET] Download ${PUBLIC_KEY_CLOUD_INIT} >> ${TMP_VM_DISK_PATH}/${PUBLIC_KEY_CLOUD_INIT}\n";
+${CURL} -L \
+    -o ${TMP_VM_DISK_PATH}/${PUBLIC_KEY_CLOUD_INIT} \
+    -C - ${REPOSITORY_URL}/${PUBLIC_KEY_CLOUD_INIT} &>/dev/null || {
+    printf "[GET_ERROR] Download ${PUBLIC_KEY_CLOUD_INIT}\n"; exit 1;
+}; printf "[GET_OK] Download ${PUBLIC_KEY_CLOUD_INIT}\n";
+
+printf "[QUEMU][01_CREATE_VM][BASE] ${VM_CONF['VMID']} ";
+sudo ${QM} create ${VM_CONF['VMID']} --name ${VM_CONF['HOSTNAME']} \
+    --cpu cputype=host --sockets ${VM_CONF['SOCKETS']} --cores ${VM_CONF['CORES']} \
+    --memory ${VM_CONF['MEMORY']} --net0 virtio,bridge=vmbr0 \
+    --bootdisk virtio0 --ostype l26 --onboot no --serial0 socket --vga serial0 &>/dev/null
+check_exit_status "$?";
+
+printf "[QUEMU][02_CREATE_VM][IMPORT_DISK] ${IMG}:${VM_CONF['STOR']} ";
+sudo ${QM} importdisk ${VM_CONF['VMID']} \
+    ${TMP_VM_DISK_PATH}/${IMG} ${VM_CONF['STOR']} --format qcow2 &>/dev/null;
+check_exit_status "$?";
+
+printf "[QUEMU][03_CREATE_VM][MAP_DISK] ${IMG} - scsi0 ";
+sudo ${QM} set ${VM_CONF['VMID']} \
+    --scsihw virtio-scsi-single \
+    --scsi0 ${VM_CONF['STOR']}:${VM_CONF['VMID']}/vm-${VM_CONF['VMID']}-disk-0.qcow2 &>/dev/null
+check_exit_status "$?";
+
+printf "[QUEMU][04_CREATE_VM][CLOUDINIT_DISK] vm-${VM_CONF['VMID']}-cloudinit.qcow2 - ide2 ";
+sudo ${QM} set ${VM_CONF['VMID']} \
+    --ide2 ${VM_CONF['STOR']}:cloudinit &>/dev/null;
+check_exit_status "$?";
+
+printf "[QUEMU][04_CREATE_VM][BOOT] ${VM_CONF['VMID']}/vm-${VM_CONF['VMID']}-disk-0.qcow2 - scsi0 ";
+#sudo ${QM} set ${VM_CONF['VMID']} --boot order='scsi0;ide2;net0'
+sudo ${QM} set ${VM_CONF['VMID']} --boot c --bootdisk scsi0 &>/dev/null;
+check_exit_status "$?";
+
+#${QM} set $VMID --scsihw virtio-scsi-single --scsi0 $STOR:vm-$VMID-disk-0,discard=on,iothread=true
+#${QM} set $VMID --ide2 $STOR:cloudinit
+#${QM} set $VMID --boot c --bootdisk scsi0
+#
+#${QM} template $VMID

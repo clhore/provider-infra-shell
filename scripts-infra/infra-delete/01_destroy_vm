@@ -1,0 +1,29 @@
+#!/usr/bin/bash
+
+# Author: Adrián Luján Muñoz (aka clhore)
+# TertiaOptio
+
+# [READ-ONLY] Colours Code
+readonly END="\033[0m\e[0m"
+readonly GREEN="\e[0;32m\033[1m"
+readonly RED="\e[0;31m\033[1m"
+
+# [READ-ONLY] Absolute Path
+declare -r SSH='/usr/bin/ssh'
+declare -r CURL='/usr/bin/curl'
+declare -r QM='/usr/sbin/qm'
+
+function check_exit_status()
+{
+    [ "${1}" == "0" ] || { printf "${RED}[ERROR]${END}\n"; exit 1;};
+    printf "${GREEN}[OK]${END}\n";
+}
+
+# [READ-ONLY] [INFRA] VM Template
+declare -A VM_CONF=()
+VM_CONF['STOR']=local
+VM_CONF['VMID']=6001
+
+printf "[QUEMU][01_DESTROY_VM][BASE] ${VM_CONF['VMID']} ";
+sudo ${QM} destroy ${VM_CONF['VMID']} 2>/dev/null
+check_exit_status "$?";
